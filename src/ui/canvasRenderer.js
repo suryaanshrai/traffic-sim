@@ -437,6 +437,13 @@ export class CanvasRenderer {
       if (!history) {
         history = [];
         this.vehicleHistory.set(id, history);
+      } else if (history.length > 0) {
+        // Self-healing check: if the vehicle jumped a huge distance, it's a reused ID spawn
+        const lastPt = history[history.length - 1];
+        const jumpDist = Math.sqrt(Math.pow(vx - lastPt.x, 2) + Math.pow(vy - lastPt.y, 2));
+        if (jumpDist > 80) {
+          history.length = 0; // Clear stale history from the previous vehicle using this ID
+        }
       }
       history.push({ x: vx, y: vy });
       if (history.length > 5) {

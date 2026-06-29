@@ -37,15 +37,16 @@ export class Road {
     return this.speedLimit * this.speedFactor;
   }
 
-  getWeight() {
+  getWeight(engine = null) {
     // Dijkstra weight (travel time in seconds, or penalize high congestion / roadblocks)
     const speed = this.getEffectiveSpeedLimit();
     if (speed <= 0) return Infinity; // Blocked road
 
     const baseTime = this.length / speed;
     
-    // Penalize congestion
-    const density = this.vehicles.length / (this.capacity || 1);
+    // Penalize congestion using engine private state if provided
+    const vehicleCount = engine ? engine.getRoadVehicles(this.id).length : this.vehicles.length;
+    const density = vehicleCount / (this.capacity || 1);
     const congestionPenalty = 1 + density * 5; // Up to 6x time if packed
 
     return baseTime * congestionPenalty;
@@ -115,7 +116,7 @@ export class Graph {
     this.roads.clear();
   }
 
-  getShortestPath(startId, endId) {
+  getShortestPath(startId, endId, engine = null) {
     if (!this.nodes.has(startId) || !this.nodes.has(endId)) return null;
 
     const distances = new Map();
@@ -154,7 +155,7 @@ export class Graph {
         const neighborId = road.toNode.id;
         if (!queue.has(neighborId)) continue;
 
-        const weight = road.getWeight();
+        const weight = road.getWeight(engine);
         if (weight === Infinity) continue; // Blocked road
 
         const newDist = minDist + weight;

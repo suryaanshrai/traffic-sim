@@ -32,7 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
     engines[algo].isBackground = (algo !== activeAlgo);
   }
 
-  // Synchronize random spawns across all engines
+  // Synchronize random spawns and roadblock events across all engines
   for (const algo in engines) {
     engines[algo].onVehicleSpawned = (id, route, spawnTime) => {
       // Only propagate spawns from the currently active engine!
@@ -40,6 +40,26 @@ document.addEventListener('DOMContentLoaded', () => {
         for (const otherAlgo in engines) {
           if (otherAlgo !== algo) {
             engines[otherAlgo].spawnVehicleDirectly(id, route, spawnTime);
+          }
+        }
+      }
+    };
+
+    engines[algo].onRoadblockTriggered = (roadId, isFullBlock) => {
+      if (algo === activeAlgo) {
+        for (const otherAlgo in engines) {
+          if (otherAlgo !== algo) {
+            engines[otherAlgo].syncRoadblock(roadId, isFullBlock);
+          }
+        }
+      }
+    };
+
+    engines[algo].onRoadblockCleared = (roadId) => {
+      if (algo === activeAlgo) {
+        for (const otherAlgo in engines) {
+          if (otherAlgo !== algo) {
+            engines[otherAlgo].syncClearRoadblock(roadId);
           }
         }
       }
@@ -72,10 +92,11 @@ document.addEventListener('DOMContentLoaded', () => {
   dashboard.setCanvasRenderer(canvasRenderer);
   dashboard.setEngines(engines); // Pass parallel engines to dashboard for live comparisons
 
-  // Reset all engines when mapController finishes loading/parsing OSM network
+  // Reset and restart all engines when mapController finishes loading/parsing OSM network
   mapController.onNetworkLoaded = () => {
     for (const algo in engines) {
       engines[algo].reset();
+      engines[algo].start();
     }
   };
 

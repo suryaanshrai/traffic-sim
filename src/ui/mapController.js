@@ -330,6 +330,7 @@ export class MapController {
       this.onNetworkLoaded();
     } else {
       this.engine.reset();
+      this.engine.start();
     }
   }
 

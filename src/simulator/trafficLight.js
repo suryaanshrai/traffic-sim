@@ -6,6 +6,7 @@ export class TrafficLight {
     // Phasing and scheduling state
     this.phases = []; // Array of arrays: [ [roadId1, roadId2], [roadId3] ]
     this.currentPhaseIndex = 0;
+    this.targetPhaseIndex = 0; // Next target phase index for adaptive algorithms
     this.state = 'GREEN'; // 'GREEN', 'YELLOW', 'RED_ALL' (transition)
     this.timer = 0; // Timer in seconds
 
@@ -14,6 +15,7 @@ export class TrafficLight {
     this.greenDuration = 15; // Fixed green time
     this.yellowDuration = 3;  // Yellow time
     this.redAllDuration = 1;  // Transition buffer time
+    this.phaseGreenDurations = []; // Optional phase-specific green times
 
     // Influx config
     this.influxLookbackJunctions = 2;
@@ -125,9 +127,11 @@ export class TrafficLight {
     }
   }
 
-  // 1. DETERMINISTIC FIXED-TIME ALGORITHM
+  // 1. DETERMINISTIC FIXED-TIME ALGORITHM (with phase-specific splits)
   updateFixed() {
-    const currentLimit = this.state === 'GREEN' ? this.greenDuration : 
+    const activeGreenDuration = (this.phaseGreenDurations && this.phaseGreenDurations[this.currentPhaseIndex] !== undefined) ? 
+                                 this.phaseGreenDurations[this.currentPhaseIndex] : this.greenDuration;
+    const currentLimit = this.state === 'GREEN' ? activeGreenDuration : 
                          this.state === 'YELLOW' ? this.yellowDuration : this.redAllDuration;
 
     if (this.timer >= currentLimit) {
@@ -136,7 +140,7 @@ export class TrafficLight {
     }
   }
 
-  // 2. INFLUX-AWARE DYNAMIC ALGORITHM (Looks N junctions away)
+  // 2. INFLUX-AWARE DYNAMIC ALGORITHM (Looks N junctions away with routing-aware validation & distance decay)
   updateInflux(dt, engine) {
     // Only evaluate switching when we are in GREEN state
     if (this.state !== 'GREEN') {
@@ -153,48 +157,80 @@ export class TrafficLight {
     const phaseWeights = this.phases.map(phaseRoads => {
       let count = 0;
       phaseRoads.forEach(roadId => {
-        count += this.getUpstreamVehicleCount(roadId, this.influxLookbackJunctions);
+        // Validate routing path intersection: only count vehicles whose paths include roadId
+        count += this.getUpstreamVehicleCount(roadId, this.influxLookbackJunctions, roadId, new Set(), engine, 0);
       });
       return count;
     });
 
     const activeWeight = phaseWeights[this.currentPhaseIndex];
-    const otherWeight = phaseWeights[(this.currentPhaseIndex + 1) % this.phases.length] || 0;
+    
+    // Find the other phase with the maximum upstream traffic weight
+    let maxOtherWeight = 0;
+    let maxOtherIndex = (this.currentPhaseIndex + 1) % this.phases.length;
+
+    for (let i = 0; i < this.phases.length; i++) {
+      if (i !== this.currentPhaseIndex) {
+        const w = phaseWeights[i];
+        if (w > maxOtherWeight) {
+          maxOtherWeight = w;
+          maxOtherIndex = i;
+        }
+      }
+    }
 
     // Minimum green time of 5s to avoid rapid flickering
     if (this.timer < 5) return;
 
-    // If other phase has high demand and active phase has less, switch early
-    // Or if active phase has reached a hard max limit of 40s
-    if (this.timer >= 40 || (otherWeight > activeWeight + 3 && this.timer >= 10) || (activeWeight === 0 && otherWeight > 0)) {
+    // Switch if:
+    // 1. Hard max green time of 40s reached
+    // 2. Active phase is empty (low demand < 0.2) and other phase has waiting traffic (demand > 0.5)
+    // 3. Other phase has significantly higher demand (differential >= 1.5)
+    const shouldSwitch = (this.timer >= 40) || 
+                         (activeWeight < 0.2 && maxOtherWeight > 0.5) || 
+                         (maxOtherWeight > activeWeight + 1.5);
+
+    if (shouldSwitch) {
       this.timer = 0;
       this.state = 'YELLOW';
+      this.targetPhaseIndex = maxOtherIndex; // Target the highest demand phase!
     }
   }
 
-  // Helper: Traverse graph backwards to count incoming vehicles
-  getUpstreamVehicleCount(roadId, depth) {
-    let count = 0;
+  // Helper: Traverse graph backwards to count incoming vehicles (avoiding cycles & routing mismatch, applying distance decay)
+  getUpstreamVehicleCount(roadId, depth, approachRoadId, visited = new Set(), engine = null, accumulatedDistance = 0) {
+    if (visited.has(roadId)) return 0;
+    visited.add(roadId);
+
+    let weightSum = 0;
     const road = this.graph.roads.get(roadId);
     if (!road) return 0;
 
-    // Count vehicles on this road
-    count += road.vehicles.length;
+    // Only count vehicles that have the target approach road in their routing path
+    const vehiclesOnRoad = engine ? engine.getRoadVehicles(roadId) : road.vehicles;
+    vehiclesOnRoad.forEach(vehicle => {
+      if (vehicle.route && vehicle.route.includes(approachRoadId)) {
+        const distToJunction = (road.length - vehicle.position) + accumulatedDistance;
+        // Linear decay: close vehicles weight 1.0, vehicles 600px away weight 0.1
+        const vWeight = Math.max(0.1, 1.0 - (distToJunction / 600));
+        weightSum += vWeight;
+      }
+    });
 
-    if (depth <= 0) return count;
+    if (depth <= 0) return weightSum;
 
     // Go back one junction
     const fromNode = road.fromNode;
     // Iterate through all incoming roads to the upstream node
     fromNode.incomingRoads.forEach(upstreamRoadId => {
-      count += this.getUpstreamVehicleCount(upstreamRoadId, depth - 1);
+      weightSum += this.getUpstreamVehicleCount(upstreamRoadId, depth - 1, approachRoadId, visited, engine, accumulatedDistance + road.length);
     });
 
-    return count;
+    return weightSum;
   }
 
-  // 3. MAX-PRESSURE ALGORITHM (State-of-the-art adaptive)
-  // Pressure of phase = (Vehicles queued on incoming roads) - (Capacity available on outgoing roads)
+  // 3. MAX-PRESSURE ALGORITHM (Queue density storage normalized)
+  // Pressure = (Queued density on incoming roads) - (Queued density on outgoing roads)
   updateMaxPressure(dt, engine) {
     if (this.state !== 'GREEN') {
       const currentLimit = this.state === 'YELLOW' ? this.yellowDuration : this.redAllDuration;
@@ -219,22 +255,26 @@ export class TrafficLight {
           const road = this.graph.roads.get(roadId);
           if (!road) return;
 
-          // Incoming queue: vehicles moving very slowly
-          const incomingQueue = road.vehicles.filter(v => v.v < 10).length;
+          // Incoming queue: vehicles moving very slowly (referenced from engine state)
+          const roadVehicles = engine ? engine.getRoadVehicles(roadId) : road.vehicles;
+          const incomingQueue = roadVehicles.filter(v => v.v < 10).length;
+          // Normalize by physical storage capacity (assuming approx 20px per vehicle)
+          const storageCapacity = Math.max(1, (road.length / 20) * road.lanes);
+          const incomingDensity = incomingQueue / storageCapacity;
 
-          // Outgoing capacity: space left on the outgoing roads connected from this junction
-          // Let's check outgoing roads from the junction
+          // Outgoing capacity: queue densities on the outgoing roads connected from this junction
           let outgoingSpace = 0;
           this.junction.outgoingRoads.forEach(outRoadId => {
             const outRoad = this.graph.roads.get(outRoadId);
             if (!outRoad) return;
-            // Outgoing queue
-            const outgoingQueue = outRoad.vehicles.filter(v => v.v < 10).length;
-            outgoingSpace += outgoingQueue;
+            const outRoadVehicles = engine ? engine.getRoadVehicles(outRoadId) : outRoad.vehicles;
+            const outgoingQueue = outRoadVehicles.filter(v => v.v < 10).length;
+            const outStorageCapacity = Math.max(1, (outRoad.length / 20) * outRoad.lanes);
+            outgoingSpace += outgoingQueue / outStorageCapacity;
           });
 
-          // Pressure = incoming queue - outgoing queue density
-          pressure += incomingQueue - (outgoingSpace / Math.max(1, this.junction.outgoingRoads.length));
+          // Pressure = incoming density - average outgoing density
+          pressure += incomingDensity - (outgoingSpace / Math.max(1, this.junction.outgoingRoads.length));
         });
         return Math.max(0, pressure);
       });
@@ -256,23 +296,21 @@ export class TrafficLight {
       if (maxPressureIndex !== this.currentPhaseIndex && (maxPressureVal - activePressure >= this.pressureThreshold)) {
         this.timer = 0;
         this.state = 'YELLOW';
+        this.targetPhaseIndex = maxPressureIndex; // Target the highest pressure phase!
       } else {
         // Reset timer to evaluate again in the next cycle, but clamp green duration
         if (this.timer >= 45) {
           this.timer = 0;
           this.state = 'YELLOW';
+          this.targetPhaseIndex = (this.currentPhaseIndex + 1) % this.phases.length; // Cycle sequentially on timeout
         }
       }
     }
   }
 
-  // 4. GREEN WAVE COORDINATION ALGORITHM
-  // Uses global simulation clock to offset phases based on distance/speed to upstream nodes.
+  // 4. ADAPTIVE GREEN WAVE COORDINATION ALGORITHM (Dynamic speed adjusted)
+  // Uses global simulation clock to offset phases based on real-time average progression speed.
   updateGreenWave(dt, engine) {
-    // A simplified coordinated green wave:
-    // Align phase switching to a global timer.
-    // If the node has an incoming road from another node, it shifts its cycle offset
-    // based on distance / speed limit.
     const globalTime = engine.simulationTime;
     const cycleLength = this.greenDuration + this.yellowDuration + this.redAllDuration;
 
@@ -292,9 +330,15 @@ export class TrafficLight {
       });
 
       if (longestIncomingRoad) {
-        // Offset = Travel Time (distance / speed limit)
-        const travelTime = longestIncomingRoad.length / longestIncomingRoad.speedLimit;
-        offset = travelTime; // Offset in seconds
+        // Calculate dynamic average progression speed of vehicles on segment
+        const vehiclesOnRoad = engine ? engine.getRoadVehicles(longestIncomingRoad.id) : longestIncomingRoad.vehicles;
+        const avgSpeed = vehiclesOnRoad.length > 0 ? 
+                         (vehiclesOnRoad.reduce((sum, v) => sum + v.v, 0) / vehiclesOnRoad.length) : 
+                         longestIncomingRoad.speedLimit;
+        
+        // Offset = Travel Time (distance / average speed). Clamp to minimum 5px/s.
+        const travelTime = longestIncomingRoad.length / Math.max(5, avgSpeed);
+        offset = travelTime; // Adaptive Offset in seconds
       }
     }
 
@@ -325,7 +369,9 @@ export class TrafficLight {
       this.state = 'RED_ALL';
     } else {
       this.state = 'GREEN';
-      this.currentPhaseIndex = (this.currentPhaseIndex + 1) % this.phases.length;
+      this.currentPhaseIndex = this.targetPhaseIndex;
+      // Setup the next sequential target phase as the default fallback
+      this.targetPhaseIndex = (this.currentPhaseIndex + 1) % this.phases.length;
     }
   }
 }

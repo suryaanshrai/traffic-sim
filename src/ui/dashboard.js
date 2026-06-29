@@ -296,8 +296,15 @@ export class DashboardController {
         
         if (road.isBlocked) {
           this.engine.activeRoadblocks.add(road.id);
+          this.engine.rerouteVehiclesAvoiding(road.id);
+          if (this.engine.onRoadblockTriggered) {
+            this.engine.onRoadblockTriggered(road.id, true);
+          }
         } else {
           this.engine.activeRoadblocks.delete(road.id);
+          if (this.engine.onRoadblockCleared) {
+            this.engine.onRoadblockCleared(road.id);
+          }
         }
         
         this.updatePropertiesDisplay('road', road);
@@ -382,6 +389,7 @@ export class DashboardController {
       if (this.builder.selectedElement && this.builder.selectedElement.type === 'node') {
         const node = this.builder.selectedElement.obj;
         node.role = this.propNodeRole.value;
+        this.builder.notifyGraphChanged();
         this.updatePropertiesDisplay('node', node);
       }
     });

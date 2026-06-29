@@ -1,5 +1,5 @@
 export class Vehicle {
-  constructor(id, route, graph, spawnTime) {
+  constructor(id, route, graph, spawnTime, engine) {
     this.id = id;
     this.route = route; // Array of road IDs
     this.graph = graph;
@@ -8,9 +8,8 @@ export class Vehicle {
     this.currentRoad = graph.roads.get(route[0]);
     this.position = 0; // Distance along current road in pixels
     
-    // Choose the least congested lane on the first road
-    this.lane = this.chooseLane(this.currentRoad);
-    this.currentRoad.vehicles.push(this);
+    // Choose the least congested lane on the first road (isolated by engine context)
+    this.lane = this.chooseLane(this.currentRoad, engine);
 
     // IDM Model Parameters (calibrated for canvas display)
     this.v0 = this.currentRoad.speedLimit; // Desired speed limit (px/s)
@@ -41,10 +40,11 @@ export class Vehicle {
     this.isArrived = false;
   }
 
-  chooseLane(road) {
+  chooseLane(road, engine = null) {
     if (!road) return 0;
     const laneCounts = Array(road.lanes).fill(0);
-    road.vehicles.forEach(veh => {
+    const vehiclesOnRoad = engine ? engine.getRoadVehicles(road.id) : road.vehicles;
+    vehiclesOnRoad.forEach(veh => {
       if (veh.lane < road.lanes) {
         laneCounts[veh.lane]++;
       }
@@ -53,7 +53,7 @@ export class Vehicle {
     return laneCounts.indexOf(Math.min(...laneCounts));
   }
 
-  update(dt, currentTime) {
+  update(dt, currentTime, engine = null) {
     if (this.isArrived) return;
 
     this.totalTravelTime = currentTime - this.spawnTime;
@@ -61,11 +61,12 @@ export class Vehicle {
       this.waitTime += dt;
     }
 
-    // 1. Identify leader in the same lane
+    // 1. Identify leader in the same lane (isolated by engine context)
     let leader = null;
     let leaderDist = Infinity;
 
-    this.currentRoad.vehicles.forEach(veh => {
+    const vehiclesOnRoad = engine ? engine.getRoadVehicles(this.currentRoad.id) : this.currentRoad.vehicles;
+    vehiclesOnRoad.forEach(veh => {
       if (veh.id !== this.id && veh.lane === this.lane && veh.position > this.position) {
         const dist = veh.position - this.position;
         if (dist < leaderDist) {
@@ -75,63 +76,76 @@ export class Vehicle {
       }
     });
 
-    let s = Infinity; // Distance to obstacle
-    let deltaV = 0;   // Speed difference
+    // Safety distance constraint parameters
+    let s = Infinity; // distance to obstacle
+    let deltaV = 0;   // speed difference to obstacle
 
     // 2. Adjust target speed if road speed limit changed (dynamic roadblocks/repairs)
     const activeSpeedLimit = this.currentRoad.getEffectiveSpeedLimit();
     this.v0 = activeSpeedLimit;
 
     if (leader) {
-      // Leader is ahead in the same lane
-      s = leaderDist - this.width; // Bumper-to-bumper distance
+      // Leader is ahead in the same lane: bumper-to-bumper distance
+      s = leaderDist - this.width;
       deltaV = this.v - leader.v;
-    } else {
-      // No vehicle ahead in lane, check the intersection at the end of the road
-      const distToJunction = this.currentRoad.length - this.position;
-      
-      const isSinkAhead = this.currentRoad.toNode.role === 'sink';
-      const isLastRoad = this.currentRoadIndex === this.route.length - 1;
+    }
 
-      if (isSinkAhead) {
-        // Drive straight into the sink at full speed (no decelerating)
-        s = Infinity;
-        deltaV = 0;
-      } else if (isLastRoad) {
-        // Stop at the very end of the final road
-        s = distToJunction;
+    // 3. Traffic light and end of road checks (evaluate independently of leader distance)
+    const distToJunction = this.currentRoad.length - this.position;
+    const isSinkAhead = this.currentRoad.toNode.role === 'sink';
+    const isLastRoad = this.currentRoadIndex === this.route.length - 1;
+
+    if (isSinkAhead) {
+      // Sinks swallow vehicles; no stopping needed
+    } else if (isLastRoad) {
+      // Stop at the very end of the final road
+      const sEnd = Math.max(0.1, distToJunction - 8);
+      if (sEnd < s) {
+        s = sEnd;
         deltaV = this.v - 0;
-      } else {
-        // Check traffic light at the next junction
-        const nextRoadId = this.route[this.currentRoadIndex + 1];
-        const nextRoad = this.graph.roads.get(nextRoadId);
-        const junction = this.currentRoad.toNode;
-        const light = junction.trafficLight;
+      }
+    } else {
+      // Check if the next road in our route is blocked
+      const nextRoadId = this.route[this.currentRoadIndex + 1];
+      const nextRoad = this.graph.roads.get(nextRoadId);
+      const isNextRoadBlocked = nextRoad && nextRoad.isBlocked;
 
-        if (light) {
-          const isGreen = light.isGreenForRoad(this.currentRoad.id);
-          const isYellow = light.isYellowForRoad(this.currentRoad.id);
+      // Check traffic light at the next junction
+      const junction = this.currentRoad.toNode;
+      const light = junction.trafficLight;
 
-          if (!isGreen) {
-            // Light is Red
-            s = distToJunction - 10; // Stop 10px before junction
+      if (isNextRoadBlocked) {
+        // Next road is blocked: stop at the junction stop bar
+        const sLight = Math.max(0.1, distToJunction - 10);
+        if (sLight < s) {
+          s = sLight;
+          deltaV = this.v - 0;
+        }
+      } else if (light) {
+        const isGreen = light.isGreenForRoad(this.currentRoad.id);
+        const isYellow = light.isYellowForRoad(this.currentRoad.id);
+
+        if (!isGreen) {
+          // Light is Red: Stop 10px before junction
+          const sLight = Math.max(0.1, distToJunction - 10);
+          if (sLight < s) {
+            s = sLight;
             deltaV = this.v - 0;
-          } else if (isYellow) {
-            // Light is Yellow: slow down if we have enough distance, otherwise commit and go
-            if (distToJunction > 40) {
-              s = distToJunction - 10;
+          }
+        } else if (isYellow) {
+          // Light is Yellow: slow down if we have enough distance, otherwise commit and go
+          if (distToJunction > 40) {
+            const sLight = Math.max(0.1, distToJunction - 10);
+            if (sLight < s) {
+              s = sLight;
               deltaV = this.v - 0;
-            } else {
-              // Commit to passing
-              s = Infinity;
-              deltaV = 0;
             }
           }
         }
       }
     }
 
-    // 3. IDM Acceleration Calculation
+    // 4. IDM Acceleration Calculation
     // Safety distance constraint: s* = s0 + v * T + (v * deltaV) / (2 * sqrt(aMax * bDecel))
     if (this.v0 <= 0) {
       // Completely blocked road
@@ -155,33 +169,50 @@ export class Vehicle {
     this.v = Math.max(0, this.v); // Cannot drive backwards
     this.position += this.v * dt;
 
-    // 4. Check for road/junction transition
+    // 5. Check for road/junction transition
     if (this.position >= this.currentRoad.length) {
-      const isLastRoad = this.currentRoadIndex === this.route.length - 1;
+      const isLastRoadTransition = this.currentRoadIndex === this.route.length - 1;
       const isSink = this.currentRoad.toNode.role === 'sink';
 
-      if (isLastRoad || isSink) {
+      if (isLastRoadTransition || isSink) {
         // Vehicle has reached destination or hit a sink!
         this.arrive();
       } else {
-        // Move to next road
         const nextRoadId = this.route[this.currentRoadIndex + 1];
         const nextRoad = this.graph.roads.get(nextRoadId);
-        
+
+        // Prevent transitioning onto a blocked road segment
+        if (nextRoad && nextRoad.isBlocked) {
+          this.position = this.currentRoad.length;
+          this.v = 0;
+          this.accel = 0;
+          return;
+        }
+
+        // Stop line enforcement: double check if traffic light has turned red/yellow
+        // and prevent vehicle crossing if it shouldn't!
+        const junction = this.currentRoad.toNode;
+        const light = junction.trafficLight;
+        if (light) {
+          const isGreen = light.isGreenForRoad(this.currentRoad.id);
+          if (!isGreen) {
+            // Force halt at the stop bar, clamp position, do NOT transition!
+            this.position = this.currentRoad.length;
+            this.v = 0;
+            this.accel = 0;
+            return;
+          }
+        }
+
         if (nextRoad) {
           const oldRoadLength = this.currentRoad.length;
 
-          // Remove from current road
-          this.currentRoad.vehicles = this.currentRoad.vehicles.filter(veh => veh.id !== this.id);
-          
           // Move to next road
           this.currentRoadIndex++;
           this.currentRoad = nextRoad;
           this.position = this.position - oldRoadLength; // subtract previous road length for accurate overflow position
           this.position = Math.max(0, this.position);
-          this.lane = this.chooseLane(this.currentRoad);
-          
-          this.currentRoad.vehicles.push(this);
+          this.lane = this.chooseLane(this.currentRoad, engine);
         } else {
           // Fallback if next road deleted during simulation
           this.arrive();
@@ -194,9 +225,5 @@ export class Vehicle {
     this.isArrived = true;
     this.v = 0;
     this.accel = 0;
-    // Remove reference from road
-    if (this.currentRoad) {
-      this.currentRoad.vehicles = this.currentRoad.vehicles.filter(veh => veh.id !== this.id);
-    }
   }
 }

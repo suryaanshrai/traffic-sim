@@ -5,6 +5,7 @@ export class SimulationEngine {
   constructor(graph) {
     this.graph = graph;
     this.vehicles = new Map(); // id -> Vehicle
+    this.roadVehicles = new Map(); // roadId -> Array of Vehicles (engine private state)
     this.arrivedVehiclesCount = 0;
     
     // Metrics accumulator
@@ -24,7 +25,7 @@ export class SimulationEngine {
     
     // Random events / Bias
     this.randomEventsEnabled = false;
-    this.randomEventProbability = 0.02; // Chance per second of an event triggering
+    this.randomEventProbability = 0.08; // Chance per second of an event triggering (approx every 12.5 seconds)
     this.activeRoadblocks = new Set(); // road IDs currently blocked by random events
     
     // Performance and tracking
@@ -43,6 +44,7 @@ export class SimulationEngine {
 
   reset() {
     this.vehicles.clear();
+    this.roadVehicles.clear();
     this.arrivedVehiclesCount = 0;
     this.completedTravelTimes = [];
     this.completedWaitTimes = [];
@@ -96,8 +98,24 @@ export class SimulationEngine {
     }
   }
 
+  getRoadVehicles(roadId) {
+    return this.roadVehicles.get(roadId) || [];
+  }
+
   update(realDt) {
     if (!this.isRunning) return;
+
+    // Rebuild the roadVehicles index for this engine's private vehicle state
+    this.roadVehicles.clear();
+    for (const [_, vehicle] of this.vehicles) {
+      if (vehicle.currentRoad) {
+        const roadId = vehicle.currentRoad.id;
+        if (!this.roadVehicles.has(roadId)) {
+          this.roadVehicles.set(roadId, []);
+        }
+        this.roadVehicles.get(roadId).push(vehicle);
+      }
+    }
 
     // Apply speed multiplier to delta time
     const dt = realDt * this.speedMultiplier;
@@ -123,7 +141,7 @@ export class SimulationEngine {
     // 3. Update Vehicles
     const vehiclesToRemove = [];
     for (const [id, vehicle] of this.vehicles) {
-      vehicle.update(dt, this.simulationTime);
+      vehicle.update(dt, this.simulationTime, this);
       if (vehicle.isArrived) {
         // Collect metrics
         this.completedTravelTimes.push(vehicle.totalTravelTime);
@@ -136,8 +154,8 @@ export class SimulationEngine {
     // Remove arrived vehicles from global map
     vehiclesToRemove.forEach(id => this.vehicles.delete(id));
 
-    // 4. Random Events Handler
-    if (this.randomEventsEnabled) {
+    // 4. Random Events Handler (Only run on the active engine to prevent state override conflict)
+    if (this.randomEventsEnabled && !this.isBackground) {
       this.handleRandomEvents(dt);
     }
 
@@ -179,12 +197,12 @@ export class SimulationEngine {
     }
     if (startNode.id === destNode.id) return;
 
-    // Find path using Dijkstra
-    const route = this.graph.getShortestPath(startNode.id, destNode.id);
+    // Find path using Dijkstra (passing this engine context!)
+    const route = this.graph.getShortestPath(startNode.id, destNode.id, this);
     if (!route || route.length === 0) return; // No connection path
 
     const id = `v_${this.vehicleIdCounter++}`;
-    const vehicle = new Vehicle(id, route, this.graph, this.simulationTime);
+    const vehicle = new Vehicle(id, route, this.graph, this.simulationTime, this);
     this.vehicles.set(id, vehicle);
 
     if (this.onVehicleSpawned) {
@@ -199,7 +217,7 @@ export class SimulationEngine {
     const validRoute = route.filter(rid => this.graph.roads.has(rid));
     if (validRoute.length === 0) return;
 
-    const vehicle = new Vehicle(id, validRoute, this.graph, spawnTime);
+    const vehicle = new Vehicle(id, validRoute, this.graph, spawnTime, this);
     this.vehicles.set(id, vehicle);
   }
 
@@ -241,6 +259,14 @@ export class SimulationEngine {
     this.activeRoadblocks.add(road.id);
 
     console.log(`Random Event Triggered on Road ${road.id}: ${isFullBlock ? 'Roadblock' : 'Road Repairs'}`);
+
+    if (isFullBlock) {
+      this.rerouteVehiclesAvoiding(road.id);
+    }
+
+    if (this.onRoadblockTriggered) {
+      this.onRoadblockTriggered(road.id, isFullBlock);
+    }
   }
 
   clearRoadblock(roadId) {
@@ -251,6 +277,56 @@ export class SimulationEngine {
     }
     this.activeRoadblocks.delete(roadId);
     console.log(`Random Event Cleared on Road ${roadId}`);
+
+    if (this.onRoadblockCleared) {
+      this.onRoadblockCleared(roadId);
+    }
+  }
+
+  syncRoadblock(roadId, isFullBlock) {
+    const road = this.graph.roads.get(roadId);
+    if (road) {
+      road.isBlocked = isFullBlock;
+      road.speedFactor = isFullBlock ? 0.0 : 0.2;
+      this.activeRoadblocks.add(roadId);
+      if (isFullBlock) {
+        this.rerouteVehiclesAvoiding(roadId);
+      }
+    }
+  }
+
+  syncClearRoadblock(roadId) {
+    const road = this.graph.roads.get(roadId);
+    if (road) {
+      road.isBlocked = false;
+      road.speedFactor = 1.0;
+    }
+    this.activeRoadblocks.delete(roadId);
+  }
+
+  rerouteVehiclesAvoiding(blockedRoadId) {
+    for (const [_, vehicle] of this.vehicles) {
+      if (vehicle.isArrived) continue;
+      
+      const futureRoute = vehicle.route.slice(vehicle.currentRoadIndex);
+      if (futureRoute.includes(blockedRoadId)) {
+        const currentRoad = vehicle.currentRoad;
+        if (!currentRoad) continue;
+        const startNodeId = currentRoad.toNode.id;
+        
+        const destRoadId = vehicle.route[vehicle.route.length - 1];
+        const destRoad = this.graph.roads.get(destRoadId);
+        if (!destRoad) continue;
+        const destNodeId = destRoad.toNode.id;
+
+        // Find alternative path avoiding the blocked road
+        const newPath = this.graph.getShortestPath(startNodeId, destNodeId, this);
+        if (newPath && newPath.length > 0) {
+          const completedRoute = vehicle.route.slice(0, vehicle.currentRoadIndex + 1);
+          vehicle.route = [...completedRoute, ...newPath];
+        }
+      }
+    }
   }
 
   getMetrics() {
@@ -278,7 +354,7 @@ export class SimulationEngine {
     let totalOccupancy = 0;
     for (const [_, road] of this.graph.roads) {
       totalCapacity += road.capacity;
-      totalOccupancy += road.vehicles.length;
+      totalOccupancy += this.getRoadVehicles(road.id).length;
     }
     const congestionIndex = totalCapacity > 0 ? (totalOccupancy / totalCapacity) * 100 : 0;
 
@@ -317,7 +393,7 @@ export class SimulationEngine {
         node.incomingRoads.forEach(rid => {
           const road = this.graph.roads.get(rid);
           if (road) {
-            const queue = road.vehicles.filter(v => v.v < 10).length;
+            const queue = this.getRoadVehicles(rid).filter(v => v.v < 10).length;
             if (queue > maxQueue) maxQueue = queue;
           }
         });
