@@ -58,6 +58,48 @@ export class NetworkBuilder {
     this.canvas.addEventListener('mousedown', (e) => this.handleMouseDown(e));
     this.canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
     window.addEventListener('mouseup', (e) => this.handleMouseUp(e));
+
+    // Map Touch Events to Mouse Events on mobile for seamless canvas drawing/drag
+    this.canvas.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 1) {
+        const touch = e.touches[0];
+        const mouseEvent = new MouseEvent('mousedown', {
+          clientX: touch.clientX,
+          clientY: touch.clientY,
+          bubbles: true,
+          cancelable: true
+        });
+        this.canvas.dispatchEvent(mouseEvent);
+        // Prevent default scrolling only when construction tool is active
+        if (this.activeTool !== 'select') {
+          e.preventDefault();
+        }
+      }
+    }, { passive: false });
+
+    this.canvas.addEventListener('touchmove', (e) => {
+      if (e.touches.length === 1) {
+        const touch = e.touches[0];
+        const mouseEvent = new MouseEvent('mousemove', {
+          clientX: touch.clientX,
+          clientY: touch.clientY,
+          bubbles: true,
+          cancelable: true
+        });
+        this.canvas.dispatchEvent(mouseEvent);
+        if (this.activeTool !== 'select') {
+          e.preventDefault();
+        }
+      }
+    }, { passive: false });
+
+    this.canvas.addEventListener('touchend', (e) => {
+      const mouseEvent = new MouseEvent('mouseup', {
+        bubbles: true,
+        cancelable: true
+      });
+      window.dispatchEvent(mouseEvent);
+    });
   }
 
   getMousePos(e) {

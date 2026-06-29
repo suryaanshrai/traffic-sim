@@ -23,6 +23,11 @@ export class MapController {
       'Shibuya Crossing': { lat: 35.6595, lng: 139.7005, zoom: 16 }
     };
 
+    // Bind touch event handlers for mobile box drawing
+    this.onTouchStartBound = this.onTouchStart.bind(this);
+    this.onTouchMoveBound = this.onTouchMove.bind(this);
+    this.onTouchEndBound = this.onTouchEnd.bind(this);
+
     this.initMap();
   }
 
@@ -114,6 +119,9 @@ export class MapController {
 
     // Hook events
     this.map.on('mousedown', this.onMouseDown, this);
+    
+    // Touch support for mobile box drawing
+    this.map.getContainer().addEventListener('touchstart', this.onTouchStartBound, { passive: false });
   }
 
   disableBoxDrawing() {
@@ -127,6 +135,45 @@ export class MapController {
     this.map.off('mousedown', this.onMouseDown, this);
     this.map.off('mousemove', this.onMouseMove, this);
     this.map.off('mouseup', this.onMouseUp, this);
+    
+    // Clean up touch support
+    const container = this.map.getContainer();
+    container.removeEventListener('touchstart', this.onTouchStartBound);
+    container.removeEventListener('touchmove', this.onTouchMoveBound);
+    container.removeEventListener('touchend', this.onTouchEndBound);
+  }
+
+  onTouchStart(e) {
+    if (e.touches.length !== 1) return;
+    const touch = e.touches[0];
+    const rect = this.map.getContainer().getBoundingClientRect();
+    const pt = L.point(touch.clientX - rect.left, touch.clientY - rect.top);
+    const latlng = this.map.containerPointToLatLng(pt);
+    
+    this.onMouseDown({ latlng });
+    
+    const container = this.map.getContainer();
+    container.addEventListener('touchmove', this.onTouchMoveBound, { passive: false });
+    container.addEventListener('touchend', this.onTouchEndBound);
+    
+    e.preventDefault();
+  }
+
+  onTouchMove(e) {
+    if (e.touches.length !== 1) return;
+    const touch = e.touches[0];
+    const rect = this.map.getContainer().getBoundingClientRect();
+    const pt = L.point(touch.clientX - rect.left, touch.clientY - rect.top);
+    const latlng = this.map.containerPointToLatLng(pt);
+    
+    this.onMouseMove({ latlng });
+    
+    e.preventDefault();
+  }
+
+  onTouchEnd(e) {
+    const latlng = this.endLatLng || this.startLatLng;
+    this.onMouseUp({ latlng });
   }
 
   onMouseDown(e) {

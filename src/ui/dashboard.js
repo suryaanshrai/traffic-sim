@@ -223,6 +223,8 @@ export class DashboardController {
       this.mapController.enableBoxDrawing();
       this.btnBboxSelect.classList.add('btn-success');
       this.btnBboxSelect.textContent = 'Drag box on map...';
+      // Auto-close sidebar panel on mobile to allow direct map drawing on full screen
+      document.dispatchEvent(new CustomEvent('close-all-panels'));
     });
 
     this.btnImportOSM.addEventListener('click', async () => {
@@ -245,6 +247,8 @@ export class DashboardController {
         const name = btn.dataset.name;
         
         this.mapController.gotoPreset(name);
+        // Auto-close sidebar on mobile to reveal preset map location immediately
+        document.dispatchEvent(new CustomEvent('close-all-panels'));
       });
     });
 

@@ -142,12 +142,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const cx = rect.width / 2;
     const cy = rect.height / 2;
 
+    // Dynamically calculate horizontal and vertical node offsets to fit any screen size
+    const dx = Math.min(250, rect.width * 0.38);
+    const dy = Math.min(180, rect.height * 0.28);
+
     // Add nodes with default sources & sinks roles to absorb traffic
     graph.addNode('c', cx, cy);
-    graph.addNode('n', cx, cy - 180).role = 'source';   // North Spawn
-    graph.addNode('s', cx, cy + 180).role = 'sink';     // South Sink
-    graph.addNode('w', cx - 250, cy).role = 'source';   // West Spawn
-    graph.addNode('e', cx + 250, cy).role = 'sink';     // East Sink
+    graph.addNode('n', cx, cy - dy).role = 'source';   // North Spawn
+    graph.addNode('s', cx, cy + dy).role = 'sink';     // South Sink
+    graph.addNode('w', cx - dx, cy).role = 'source';   // West Spawn
+    graph.addNode('e', cx + dx, cy).role = 'sink';     // East Sink
 
     // Add roads: opposite directions to showcase lanes separation
     graph.addRoad('n_c', 'n', 'c', 3, 90);
@@ -250,6 +254,68 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-speed-1x').addEventListener('click', () => setActiveSpeed(1.0));
   document.getElementById('btn-speed-2x').addEventListener('click', () => setActiveSpeed(2.0));
   document.getElementById('btn-speed-4x').addEventListener('click', () => setActiveSpeed(4.0));
+
+  // 3b. Mobile Panel Navigation Controller
+  const mobileNavBar = document.getElementById('mobile-nav-bar');
+  const sidebarPanel = document.getElementById('sidebar-panel');
+  const dashboardPanel = document.getElementById('dashboard-panel');
+  const backdrop = document.getElementById('mobile-backdrop');
+  
+  const btnNavSim = document.getElementById('btn-nav-sim');
+  const btnNavTools = document.getElementById('btn-nav-tools');
+  const btnNavAnalytics = document.getElementById('btn-nav-analytics');
+
+  function closeAllPanels() {
+    sidebarPanel.classList.remove('active');
+    dashboardPanel.classList.remove('active');
+    backdrop.classList.add('hidden');
+    
+    btnNavSim.classList.add('active');
+    btnNavTools.classList.remove('active');
+    btnNavAnalytics.classList.remove('active');
+  }
+
+  function openPanel(panel) {
+    closeAllPanels();
+    panel.classList.add('active');
+    backdrop.classList.remove('hidden');
+    btnNavSim.classList.remove('active');
+    
+    if (panel === sidebarPanel) {
+      btnNavTools.classList.add('active');
+    } else if (panel === dashboardPanel) {
+      btnNavAnalytics.classList.add('active');
+    }
+    
+    // Trigger canvas resize to ensure renderer knows the exact layout client rect immediately
+    setTimeout(resizeCanvas, 100);
+  }
+
+  if (btnNavSim) {
+    btnNavSim.addEventListener('click', closeAllPanels);
+  }
+  if (btnNavTools) {
+    btnNavTools.addEventListener('click', () => {
+      if (sidebarPanel.classList.contains('active')) {
+        closeAllPanels();
+      } else {
+        openPanel(sidebarPanel);
+      }
+    });
+  }
+  if (btnNavAnalytics) {
+    btnNavAnalytics.addEventListener('click', () => {
+      if (dashboardPanel.classList.contains('active')) {
+        closeAllPanels();
+      } else {
+        openPanel(dashboardPanel);
+      }
+    });
+  }
+  if (backdrop) {
+    backdrop.addEventListener('click', closeAllPanels);
+  }
+  document.addEventListener('close-all-panels', closeAllPanels);
 
   // 4. Main Animation & Execution loop
   let lastTime = performance.now();

@@ -540,22 +540,27 @@ export class CanvasRenderer {
   drawHUD(ctx, w, h) {
     ctx.save();
     
+    const isMobile = w < 600;
+    const hudW = isMobile ? 180 : 220;
+    const hudH = isMobile ? 52 : 65;
+    const hudX = w - hudW - 15;
+    const hudY = 15;
+
     // Draw HUD container in the top right
     ctx.fillStyle = 'rgba(10, 10, 18, 0.75)';
     ctx.strokeStyle = 'rgba(0, 242, 254, 0.15)';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.roundRect(w - 240, 20, 220, 65, 6);
+    ctx.roundRect(hudX, hudY, hudW, hudH, 6);
     ctx.fill();
     ctx.stroke();
 
     // Text labels
     ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
-    ctx.font = '500 9px Space Grotesk';
-    ctx.fillText('SYSTEM COMMAND HUD', w - 225, 34);
+    ctx.font = isMobile ? '500 8px Space Grotesk' : '500 9px Space Grotesk';
+    ctx.fillText('SYSTEM COMMAND HUD', hudX + 12, hudY + 14);
 
     ctx.fillStyle = '#fff';
-    ctx.font = '600 10.5px Space Grotesk';
     
     const algoNames = {
       'fixed': 'FIXED-TIME CONTROL',
@@ -566,10 +571,11 @@ export class CanvasRenderer {
     const algoStr = algoNames[this.engine.activeAlgorithm] || this.engine.activeAlgorithm.toUpperCase();
     
     ctx.fillStyle = '#00f2fe'; // Neon cyan
-    ctx.fillText(`ALGORITHM: ${algoStr}`, w - 225, 50);
+    ctx.font = isMobile ? '600 9px Space Grotesk' : '600 10.5px Space Grotesk';
+    ctx.fillText(`ALGORITHM: ${algoStr}`, hudX + 12, hudY + 28);
 
     ctx.fillStyle = '#e2e8f0';
-    ctx.fillText(`SIMULATION STATE: ${this.engine.isRunning ? 'RUNNING (' + this.engine.speedMultiplier.toFixed(1) + 'x)' : 'PAUSED'}`, w - 225, 65);
+    ctx.fillText(`SIMULATION STATE: ${this.engine.isRunning ? 'RUNNING (' + this.engine.speedMultiplier.toFixed(1) + 'x)' : 'PAUSED'}`, hudX + 12, hudY + 41);
 
     ctx.restore();
   }
