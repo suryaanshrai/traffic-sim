@@ -1,0 +1,691 @@
+@import 'leaflet/dist/leaflet.css';
+
+:root {
+  --bg-dark: #050508;
+  --bg-card: rgba(10, 10, 18, 0.75);
+  --bg-card-hover: rgba(16, 16, 28, 0.85);
+  --border-neon: rgba(0, 242, 254, 0.2);
+  --border-neon-hover: rgba(0, 242, 254, 0.5);
+  --border-glow-purple: rgba(121, 40, 202, 0.4);
+  
+  --neon-cyan: #00f2fe;
+  --neon-purple: #7928CA;
+  --neon-pink: #ff007f;
+  --neon-green: #00ff87;
+  --neon-red: #ff0055;
+  --neon-yellow: #ffaa00;
+  
+  --font-header: 'Space Grotesk', sans-serif;
+  --font-body: 'Outfit', sans-serif;
+  
+  --shadow-neon: 0 0 15px rgba(0, 242, 254, 0.25);
+  --shadow-neon-pink: 0 0 15px rgba(255, 0, 127, 0.35);
+  --shadow-glass: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--bg-dark);
+  color: #e2e8f0;
+  font-family: var(--font-body);
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-header);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+/* App Layout Grid */
+#app-container {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  grid-template-rows: 1fr 260px;
+  grid-template-areas: 
+    "sidebar viewport"
+    "dashboard dashboard";
+  height: 100vh;
+  width: 100vw;
+  position: relative;
+  background-image: radial-gradient(circle at 50% 50%, #0f0c20 0%, var(--bg-dark) 80%);
+}
+
+/* Viewport Area (Map + Canvas) */
+#viewport-area {
+  grid-area: viewport;
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+}
+
+#map-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  transition: opacity 0.5s ease;
+  z-index: 1;
+}
+
+/* Custom dark Leaflet styles */
+.leaflet-container {
+  background: var(--bg-dark) !important;
+}
+.leaflet-bar {
+  border: 1px solid var(--border-neon) !important;
+  box-shadow: var(--shadow-glass) !important;
+}
+.leaflet-bar a {
+  background-color: rgba(10, 10, 18, 0.9) !important;
+  color: #fff !important;
+  border-bottom: 1px solid var(--border-neon) !important;
+  transition: all 0.2s ease !important;
+}
+.leaflet-bar a:hover {
+  background-color: var(--neon-cyan) !important;
+  color: #000 !important;
+  text-shadow: 0 0 5px #fff;
+}
+.leaflet-control-attribution {
+  background: rgba(10, 10, 18, 0.75) !important;
+  color: #64748b !important;
+  font-family: var(--font-body);
+}
+
+#simulation-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+  pointer-events: auto; /* Handles simulation hovers/clicks */
+}
+
+/* Glassmorphism sidebar panel */
+#sidebar-panel {
+  grid-area: sidebar;
+  background: var(--bg-card);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-right: 1px solid var(--border-neon);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  box-shadow: 10px 0 30px rgba(0,0,0,0.5);
+  border-image: linear-gradient(to bottom, var(--border-neon), rgba(0,0,0,0)) 1 100%;
+}
+
+.panel-header {
+  padding: 24px;
+  border-bottom: 1px solid var(--border-neon);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.panel-header h1 {
+  font-size: 1.5rem;
+  background: linear-gradient(45deg, var(--neon-cyan), var(--neon-pink));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-shadow: 0 0 20px rgba(0, 242, 254, 0.2);
+}
+
+.pulse-dot {
+  width: 10px;
+  height: 10px;
+  background-color: var(--neon-cyan);
+  border-radius: 50%;
+  box-shadow: 0 0 10px var(--neon-cyan);
+  animation: pulse-glow 2s infinite;
+}
+
+@keyframes pulse-glow {
+  0% {
+    transform: scale(0.9);
+    box-shadow: 0 0 4px var(--neon-cyan);
+  }
+  50% {
+    transform: scale(1.15);
+    box-shadow: 0 0 12px var(--neon-cyan), 0 0 20px var(--neon-cyan);
+  }
+  100% {
+    transform: scale(0.9);
+    box-shadow: 0 0 4px var(--neon-cyan);
+  }
+}
+
+.panel-section {
+  padding: 20px 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.panel-section h3 {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #94a3b8;
+  margin-bottom: 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* Mode toggles selector */
+.mode-selector {
+  display: flex;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 8px;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  margin-bottom: 12px;
+}
+
+.mode-btn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: var(--font-header);
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.mode-btn.active {
+  background: rgba(0, 242, 254, 0.15);
+  color: #fff;
+  border: 1px solid var(--border-neon);
+  box-shadow: 0 0 10px rgba(0, 242, 254, 0.15);
+  text-shadow: 0 0 5px rgba(255, 255, 255, 0.5);
+}
+
+/* Form and slider styling */
+.control-group {
+  margin-bottom: 16px;
+}
+
+.control-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: #cbd5e1;
+  margin-bottom: 6px;
+}
+
+.control-value {
+  color: var(--neon-cyan);
+  font-weight: 600;
+}
+
+input[type="range"] {
+  -webkit-appearance: none;
+  width: 100%;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  outline: none;
+  transition: background 0.3s;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  background: var(--neon-cyan);
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 0 8px var(--neon-cyan);
+  transition: transform 0.1s;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.3);
+}
+
+/* Dropdown styling */
+select {
+  width: 100%;
+  background: rgba(10, 10, 18, 0.9);
+  color: #fff;
+  border: 1px solid var(--border-neon);
+  padding: 10px;
+  border-radius: 6px;
+  outline: none;
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+select:focus {
+  border-color: var(--neon-cyan);
+  box-shadow: 0 0 10px rgba(0, 242, 254, 0.2);
+}
+
+/* Button style rules */
+.btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: var(--font-header);
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, rgba(0, 242, 254, 0.2), rgba(121, 40, 202, 0.2));
+  border: 1px solid var(--border-neon);
+}
+
+.btn-primary:hover {
+  background: linear-gradient(135deg, rgba(0, 242, 254, 0.4), rgba(121, 40, 202, 0.4));
+  border-color: var(--neon-cyan);
+  box-shadow: 0 0 15px rgba(0, 242, 254, 0.3);
+}
+
+.btn-danger {
+  background: rgba(255, 0, 85, 0.1);
+  border: 1px solid rgba(255, 0, 85, 0.3);
+  color: #ffa6c9;
+}
+
+.btn-danger:hover {
+  background: rgba(255, 0, 85, 0.25);
+  border-color: var(--neon-red);
+  box-shadow: 0 0 15px rgba(255, 0, 85, 0.3);
+}
+
+.btn-success {
+  background: rgba(0, 255, 135, 0.1);
+  border: 1px solid rgba(0, 255, 135, 0.3);
+  color: #a6ffd2;
+}
+
+.btn-success:hover {
+  background: rgba(0, 255, 135, 0.25);
+  border-color: var(--neon-green);
+  box-shadow: 0 0 15px rgba(0, 255, 135, 0.3);
+}
+
+/* Button group */
+.btn-group {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.btn-group .btn {
+  flex: 1;
+}
+
+/* Tool configurations in Builder mode */
+.tool-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.tool-btn {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  color: #94a3b8;
+  padding: 12px 6px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  font-family: var(--font-header);
+}
+
+.tool-btn svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+}
+
+.tool-btn:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+  color: #cbd5e1;
+}
+
+.tool-btn.active {
+  border-color: var(--border-neon-hover);
+  color: var(--neon-cyan);
+  background: rgba(0, 242, 254, 0.08);
+  box-shadow: inset 0 0 10px rgba(0, 242, 254, 0.08);
+}
+
+/* Bottom Dashboard CSS */
+#dashboard-panel {
+  grid-area: dashboard;
+  background: var(--bg-card);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid var(--border-neon);
+  z-index: 10;
+  display: grid;
+  grid-template-columns: 2fr 3fr;
+  padding: 16px 24px;
+  gap: 24px;
+  box-shadow: 0 -10px 30px rgba(0,0,0,0.5);
+  border-image: linear-gradient(to right, var(--border-neon), rgba(0,0,0,0)) 1 100%;
+}
+
+/* Metrics summary */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.metric-card {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.03);
+  padding: 12px 16px;
+  border-radius: 8px;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.metric-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(to right, var(--neon-cyan), transparent);
+  opacity: 0.3;
+}
+
+.metric-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(0, 242, 254, 0.15);
+  box-shadow: 0 4px 20px rgba(0, 242, 254, 0.05);
+}
+
+.metric-label {
+  font-size: 0.75rem;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+
+.metric-value {
+  font-family: var(--font-header);
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #f8fafc;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.metric-unit {
+  font-size: 0.8rem;
+  color: #64748b;
+  font-weight: 400;
+}
+
+/* Neon accents for metrics */
+.metric-card.congestion::before {
+  background: linear-gradient(to right, var(--neon-pink), transparent);
+}
+.metric-card.emissions::before {
+  background: linear-gradient(to right, var(--neon-green), transparent);
+}
+.metric-card.throughput::before {
+  background: linear-gradient(to right, var(--neon-yellow), transparent);
+}
+
+/* Charts container */
+.chart-container {
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+  padding: 12px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.chart-title {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.chart-canvas-wrapper {
+  flex: 1;
+  position: relative;
+  height: 100%;
+  width: 100%;
+}
+
+/* Hover tooltips overlays */
+.canvas-tooltip {
+  position: absolute;
+  background: rgba(10, 10, 18, 0.9);
+  border: 1px solid var(--neon-cyan);
+  box-shadow: var(--shadow-neon);
+  border-radius: 6px;
+  padding: 8px 12px;
+  color: #fff;
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  pointer-events: none;
+  z-index: 1000;
+  transition: opacity 0.15s ease;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.tooltip-title {
+  font-family: var(--font-header);
+  font-weight: 600;
+  color: var(--neon-cyan);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 4px;
+  margin-bottom: 4px;
+}
+
+/* Preset map selection styling */
+.presets-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.preset-btn {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+  color: #94a3b8;
+  padding: 8px 4px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+}
+
+.preset-btn:hover {
+  border-color: var(--neon-purple);
+  color: #fff;
+  background: rgba(121, 40, 202, 0.1);
+}
+
+/* Search bar styling */
+.search-wrapper {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.search-wrapper input {
+  flex: 1;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--border-neon);
+  border-radius: 6px;
+  padding: 8px 12px;
+  color: #fff;
+  outline: none;
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  transition: all 0.3s;
+}
+
+.search-wrapper input:focus {
+  border-color: var(--neon-cyan);
+  box-shadow: 0 0 10px rgba(0, 242, 254, 0.15);
+}
+
+/* Leaflet Selection Box Control */
+.box-select-btn {
+  display: flex;
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+/* Hide control styles if inactive */
+.hidden {
+  display: none !important;
+}
+
+/* Custom cursors for simulation builder */
+.cursor-crosshair {
+  cursor: crosshair !important;
+}
+.cursor-cell {
+  cursor: cell !important;
+}
+.cursor-pointer {
+  cursor: pointer !important;
+}
+.cursor-blocked {
+  cursor: no-drop !important;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 242, 254, 0.2);
+}
+
+/* Comparison table styling */
+.comp-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+  color: #e2e8f0;
+}
+.comp-table th {
+  text-align: left;
+  padding: 8px;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.08);
+  color: #64748b;
+  font-family: var(--font-header);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+.comp-table td {
+  padding: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  font-size: 0.8rem;
+}
+.comp-table tr:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+.comp-bar-container {
+  width: 100px;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  overflow: hidden;
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 8px;
+}
+.comp-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--neon-cyan), var(--neon-purple));
+  border-radius: 4px;
+}
+.comp-metric-name {
+  font-weight: 500;
+  color: var(--neon-cyan);
+}
+.comp-delete-btn {
+  background: transparent;
+  border: none;
+  color: var(--neon-red);
+  cursor: pointer;
+  padding: 2px 6px;
+  font-family: var(--font-header);
+  font-size: 0.75rem;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+.comp-delete-btn:hover {
+  opacity: 1;
+}
+

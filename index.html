@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GRIDLOCK // AI Neon Traffic Simulator</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <div id="app-container">
+      
+      <!-- Left Controls Sidebar -->
+      <aside id="sidebar-panel">
+        <header class="panel-header">
+          <div class="pulse-dot"></div>
+          <h1>GRIDLOCK.OS</h1>
+        </header>
+
+        <!-- Mode Toggle -->
+        <section class="panel-section">
+          <h3>Simulation Mode</h3>
+          <div class="mode-selector">
+            <button id="btn-mode-builder" class="mode-btn active">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              Grid Builder
+            </button>
+            <button id="btn-mode-map" class="mode-btn">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M16.2 7.8l-2 6.3-6.4 2.1 2-6.3 6.4-2.1z"/></svg>
+              OSM Map Import
+            </button>
+          </div>
+        </section>
+
+        <!-- Map Selection Sub-panel (hidden by default) -->
+        <section id="map-controls-section" class="panel-section hidden">
+          <h3>Map Coordinates</h3>
+          <div class="search-wrapper">
+            <input type="text" id="map-search-input" placeholder="Search address, e.g. Times Square..." />
+            <button id="btn-map-search" class="btn btn-primary">Go</button>
+          </div>
+
+          <button id="btn-bbox-select" class="btn btn-primary box-select-btn">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></svg>
+            Draw Bounding Box
+          </button>
+
+          <div class="control-group">
+            <button id="btn-import-osm" class="btn btn-success" style="width: 100%; margin-bottom: 12px;" disabled>
+              Import Selection Area
+            </button>
+          </div>
+
+          <h3>Preset Hubs</h3>
+          <div class="presets-grid">
+            <button class="preset-btn" data-lat="48.8738" data-lng="2.2950" data-name="Arc de Triomphe">Paris Arc</button>
+            <button class="preset-btn" data-lat="40.7580" data-lng="-73.9855" data-name="Times Square">NY Times Sq</button>
+            <button class="preset-btn" data-lat="35.6595" data-lng="139.7005" data-name="Shibuya Crossing">Tokyo Shib</button>
+          </div>
+        </section>
+
+        <!-- Grid Builder Tools (visible by default) -->
+        <section id="builder-controls-section" class="panel-section">
+          <h3>Road Construction</h3>
+          <div class="tool-grid">
+            <button id="tool-select" class="tool-btn active">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linejoin="round"><path d="m15 15-4 5V5l9 9h-5Z"/></svg>
+              Select / Drag
+            </button>
+            <button id="tool-node" class="tool-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>
+              Add Node
+            </button>
+            <button id="tool-road" class="tool-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linejoin="round"><line x1="4" y1="20" x2="20" y2="4"/><circle cx="4" cy="20" r="3" fill="currentColor"/><circle cx="20" cy="4" r="3" fill="currentColor"/></svg>
+              2-Way Road
+            </button>
+            <button id="tool-oneway" class="tool-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+              1-Way Road
+            </button>
+            <button id="tool-hazard" class="tool-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              Hazard
+            </button>
+            <button id="tool-delete" class="tool-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+              Demolish
+            </button>
+          </div>
+          
+          <div class="control-group" style="margin-top: 16px;">
+            <button id="btn-clear-grid" class="btn btn-danger" style="width: 100%;">
+              Clear Network
+            </button>
+          </div>
+        </section>
+
+        <!-- Selected Element Options (dynamic) -->
+        <section id="properties-section" class="panel-section hidden">
+          <h3>Element Properties</h3>
+          <div id="road-properties" class="hidden">
+            <div class="control-group">
+              <div class="control-label">
+                <span>Lanes</span>
+                <span id="prop-lanes-val" class="control-value">2</span>
+              </div>
+              <input type="range" id="prop-lanes" min="1" max="4" value="2" />
+            </div>
+            <div class="control-group">
+              <div class="control-label">
+                <span>Speed Limit (km/h equivalent)</span>
+                <span id="prop-speed-val" class="control-value">80</span>
+              </div>
+              <input type="range" id="prop-speed" min="30" max="120" step="10" value="80" />
+            </div>
+            <div class="control-group">
+              <div class="control-label" style="display:flex; align-items:center; gap:8px;">
+                <input type="checkbox" id="prop-bidirectional" style="accent-color: var(--neon-cyan); cursor: pointer;" />
+                <label for="prop-bidirectional" style="cursor:pointer; font-size:0.85rem;">Bidirectional Road</label>
+              </div>
+            </div>
+            <button id="btn-toggle-block" class="btn btn-danger" style="width: 100%;">Toggle Roadblock</button>
+          </div>
+          <div id="node-properties" class="hidden">
+            <div class="control-group">
+              <label class="control-label" for="prop-node-role">Node Role</label>
+              <select id="prop-node-role">
+                <option value="junction">Junction (Normal)</option>
+                <option value="source">Source (Spawn Area)</option>
+                <option value="sink">Sink (Absorb Area)</option>
+              </select>
+            </div>
+            <p style="font-size:0.8rem; color:#64748b; margin-top:4px;" id="node-light-status"></p>
+          </div>
+        </section>
+
+        <!-- Network Legend -->
+        <section class="panel-section">
+          <h3>Network Legend</h3>
+          <div style="display: flex; flex-direction: column; gap: 8px; font-size: 0.75rem; color: #94a3b8;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #00f2fe; box-shadow: 0 0 6px #00f2fe;"></span>
+              <span>Source Node (Spawns vehicles)</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #ff007f; box-shadow: 0 0 6px #ff007f;"></span>
+              <span>Sink Node (Absorbs vehicles)</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid #fff; background: rgba(255,255,255,0.1);"></span>
+              <span>Normal Junction (Controlled Signal)</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+              <span style="display: inline-block; width: 24px; height: 4px; border-radius: 2px; background: rgba(139, 92, 246, 0.4); box-shadow: 0 0 4px #8b5cf6;"></span>
+              <span>One-Way Road (Neon Purple)</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="display: inline-block; width: 24px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.15);"></span>
+              <span>Two-Way Road (Standard)</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Engine controls -->
+        <section class="panel-section" style="flex: 1;">
+          <h3>Simulation Core</h3>
+          
+          <div class="control-group">
+            <div class="control-label">
+              <span>Traffic Influx (Spawning)</span>
+              <span id="val-spawn-rate" class="control-value">1.0 /s</span>
+            </div>
+            <input type="range" id="slider-spawn-rate" min="0.2" max="5.0" step="0.2" value="1.0" />
+          </div>
+
+          <div class="control-group">
+            <label class="control-label" for="select-algo">Light Algorithm</label>
+            <select id="select-algo">
+              <option value="fixed">Fixed-Time (Deterministic)</option>
+              <option value="influx">Influx-Aware (Dynamic Queues)</option>
+              <option value="max_pressure">Max-Pressure (Adaptive Grid)</option>
+              <option value="green_wave">Green Wave (Coordinated)</option>
+            </select>
+          </div>
+
+          <div id="influx-config-group" class="control-group hidden">
+            <div class="control-label">
+              <span>Sensing Distance (Junctions)</span>
+              <span id="val-lookback" class="control-value">2</span>
+            </div>
+            <input type="range" id="slider-lookback" min="1" max="4" step="1" value="2" />
+          </div>
+
+          <div class="control-group">
+            <div class="control-label" style="display:flex; align-items:center; gap:8px;">
+              <input type="checkbox" id="checkbox-events" style="accent-color: var(--neon-cyan); cursor: pointer;" />
+              <label for="checkbox-events" style="cursor:pointer;">Random Events (Roadblocks, accidents)</label>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <div class="control-label">
+              <span>Simulation Speed</span>
+              <span id="val-speed-mult" class="control-value">1.0x</span>
+            </div>
+            <div class="btn-group">
+              <button id="btn-speed-pause" class="btn">Pause</button>
+              <button id="btn-speed-1x" class="btn btn-primary">1x</button>
+              <button id="btn-speed-2x" class="btn">2x</button>
+              <button id="btn-speed-4x" class="btn">4x</button>
+            </div>
+          </div>
+        </section>
+      </aside>
+
+      <!-- Viewport Display Container -->
+      <main id="viewport-area">
+        <!-- Leaflet Map Container -->
+        <div id="map-container"></div>
+        <!-- Canvas simulation overlay -->
+        <canvas id="simulation-canvas"></canvas>
+        <!-- Overlay Tooltip -->
+        <div id="tooltip" class="canvas-tooltip hidden"></div>
+      </main>
+
+      <!-- Bottom Dashboard Panel -->
+      <footer id="dashboard-panel">
+        
+        <!-- Live Metrics Indicators -->
+        <div class="metrics-grid">
+          <!-- Metric 1: Wait Time -->
+          <div class="metric-card wait-time">
+            <div class="metric-label">Avg Light Wait Time</div>
+            <div class="metric-value">
+              <span id="metric-wait-time">0.0</span>
+              <span class="metric-unit">s</span>
+            </div>
+          </div>
+
+          <!-- Metric 2: Congestion -->
+          <div class="metric-card congestion">
+            <div class="metric-label">Congestion Index</div>
+            <div class="metric-value">
+              <span id="metric-congestion">0.0</span>
+              <span class="metric-unit">%</span>
+            </div>
+          </div>
+
+          <!-- Metric 3: Emissions CO2 Savings -->
+          <div class="metric-card emissions">
+            <div class="metric-label">CO₂ Offset (Savings)</div>
+            <div class="metric-value">
+              <span id="metric-co2-savings">0</span>
+              <span class="metric-unit">g</span>
+            </div>
+          </div>
+
+          <!-- Metric 4: Throughput -->
+          <div class="metric-card throughput">
+            <div class="metric-label">Arrived Vehicles</div>
+            <div class="metric-value">
+              <span id="metric-throughput">0</span>
+              <span class="metric-unit">cars</span>
+            </div>
+          </div>
+
+          <!-- Metric 5: Average Speed -->
+          <div class="metric-card speed">
+            <div class="metric-label">Avg Flow Velocity</div>
+            <div class="metric-value">
+              <span id="metric-speed">0.0</span>
+              <span class="metric-unit">km/h</span>
+            </div>
+          </div>
+
+          <!-- Metric 6: Max Queue length -->
+          <div class="metric-card queue">
+            <div class="metric-label">Max Queue Length</div>
+            <div class="metric-value">
+              <span id="metric-max-queue">0</span>
+              <span class="metric-unit">cars</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Metric history Charts / Comparison -->
+        <div class="chart-container">
+          <header class="chart-header" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+            <span class="chart-title" id="chart-panel-title">Realtime Performance Index</span>
+            <div class="view-selector" style="display: flex; gap: 8px; align-items: center;">
+              <div class="mode-selector" style="margin-bottom: 0; padding: 2px;">
+                <button id="btn-view-live" class="mode-btn active" style="padding: 4px 8px; font-size: 0.75rem;">Live</button>
+                <button id="btn-view-compare" class="mode-btn" style="padding: 4px 8px; font-size: 0.75rem;">Compare</button>
+              </div>
+            </div>
+          </header>
+          <div class="chart-canvas-wrapper" id="live-chart-wrapper">
+            <canvas id="performance-chart"></canvas>
+          </div>
+          <!-- Comparison Panel View -->
+          <div class="chart-canvas-wrapper hidden" id="comparison-panel-wrapper" style="overflow-y: auto; padding: 4px 8px;">
+            <div id="comparison-data-table" style="width: 100%; border-collapse: collapse; font-size: 0.8rem;">
+              <!-- Dynamically populated live comparison -->
+            </div>
+          </div>
+        </div>
+      </footer>
+
+    </div>
+
+    <!-- Leaflet.js JS (Via unpkg, let's load it through script tags in body or import it from the packages. We will load via script tags to guarantee loading speed and stability if Vite has problems import bundling Leaflet styles/images correctly).
+         Actually, we installed leaflet via npm! Let's load the main JS from src/main.js by importing it, which is standard in Vite. Let's make sure it is handled correctly. -->
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
