@@ -150,6 +150,8 @@ export class CanvasRenderer {
   drawMouseRipple(ctx) {
     const mx = this.mousePos.x;
     const my = this.mousePos.y;
+    const w = this.width || this.canvas.width;
+    const h = this.height || this.canvas.height;
 
     const radialGrd = ctx.createRadialGradient(mx, my, 0, mx, my, 200);
     radialGrd.addColorStop(0, 'rgba(0, 242, 254, 0.08)');
@@ -157,7 +159,7 @@ export class CanvasRenderer {
     radialGrd.addColorStop(1, 'rgba(0, 0, 0, 0)');
 
     ctx.fillStyle = radialGrd;
-    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    ctx.fillRect(0, 0, w, h);
   }
 
   drawRoads(ctx) {
@@ -522,10 +524,23 @@ export class CanvasRenderer {
       ctx.fillRect(w/2 - 1.5, -h/2 + 0.5, 1.5, 1);
       ctx.fillRect(w/2 - 1.5, h/2 - 1.5, 1.5, 1);
 
-      // Tiny brake taillights
       ctx.fillStyle = '#ff0055';
       ctx.fillRect(-w/2, -h/2 + 0.5, 1, 1);
       ctx.fillRect(-w/2, h/2 - 1.5, 1, 1);
+
+      // Draw dynamic hazard warning triangle indicator if broken down (flashing neon orange/red)
+      if (vehicle.isBrokenDown) {
+        ctx.shadowColor = '#ff5500';
+        ctx.shadowBlur = 6;
+        ctx.strokeStyle = (Math.floor(Date.now() / 200) % 2 === 0) ? '#ff5500' : '#ff0033';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(0, -h/2 - 3);
+        ctx.lineTo(-w/2 - 2, h/2 + 2);
+        ctx.lineTo(w/2 + 2, h/2 + 2);
+        ctx.closePath();
+        ctx.stroke();
+      }
 
       ctx.restore();
     }

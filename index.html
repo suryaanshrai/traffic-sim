@@ -197,9 +197,33 @@
           </div>
 
           <div class="control-group">
+            <label class="control-label" for="select-signal-deployment">Signal Deployment</label>
+            <select id="select-signal-deployment">
+              <option value="density">Volume & Capacity Density</option>
+              <option value="major">Major Corridor Intersections</option>
+              <option value="random">Random Distribution</option>
+            </select>
+          </div>
+
+          <div class="control-group">
+            <div class="control-label">
+              <span>Traffic Light Density</span>
+              <span id="val-signal-density" class="control-value">80%</span>
+            </div>
+            <input type="range" id="slider-signal-density" min="0" max="100" step="5" value="80" />
+          </div>
+
+          <div class="control-group">
             <div class="control-label" style="display:flex; align-items:center; gap:8px;">
               <input type="checkbox" id="checkbox-events" style="accent-color: var(--neon-cyan); cursor: pointer;" />
-              <label for="checkbox-events" style="cursor:pointer;">Random Events (Roadblocks, accidents)</label>
+              <label for="checkbox-events" style="cursor:pointer;">Random Events (Roadblocks, repairs)</label>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <div class="control-label" style="display:flex; align-items:center; gap:8px;">
+              <input type="checkbox" id="checkbox-accidents" style="accent-color: var(--neon-cyan); cursor: pointer;" />
+              <label for="checkbox-accidents" style="cursor:pointer;">Real-time Accidents & Breakdowns</label>
             </div>
           </div>
 

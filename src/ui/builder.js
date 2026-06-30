@@ -22,6 +22,11 @@ export class NetworkBuilder {
     // Road selection width tolerance
     this.roadTolerance = 8;
 
+    // Pinch and zoom states for mobile
+    this.isPinching = false;
+    this.pinchStartDist = 0;
+    this.pinchStartCenter = { x: 0, y: 0 };
+
     this.initEvents();
   }
 
@@ -59,8 +64,42 @@ export class NetworkBuilder {
     this.canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
     window.addEventListener('mouseup', (e) => this.handleMouseUp(e));
 
-    // Map Touch Events to Mouse Events on mobile for seamless canvas drawing/drag
+    // Wheel zoom support in builder mode (desktop)
+    this.canvas.addEventListener('wheel', (e) => {
+      if (this.canvasRenderer && !this.canvasRenderer.isMapMode) {
+        e.preventDefault();
+        const rect = this.canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        
+        const zoomFactor = 1.1;
+        const oldZoom = this.canvasRenderer.zoom;
+        const newZoom = e.deltaY < 0 ? oldZoom * zoomFactor : oldZoom / zoomFactor;
+        
+        this.canvasRenderer.zoom = Math.max(0.5, Math.min(3.0, newZoom));
+        
+        this.canvasRenderer.panOffset.x = mouseX - (mouseX - this.canvasRenderer.panOffset.x) * (this.canvasRenderer.zoom / oldZoom);
+        this.canvasRenderer.panOffset.y = mouseY - (mouseY - this.canvasRenderer.panOffset.y) * (this.canvasRenderer.zoom / oldZoom);
+      }
+    }, { passive: false });
+
+    // Map Touch Events on mobile for pinch zoom and drag panning
     this.canvas.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 2 && this.canvasRenderer && !this.canvasRenderer.isMapMode) {
+        // Two-finger touch: start pinch zoom and pan
+        this.isPinching = true;
+        this.pinchStartDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        this.pinchStartCenter = {
+          x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+          y: (e.touches[0].clientY + e.touches[1].clientY) / 2
+        };
+        e.preventDefault();
+        return;
+      }
+      
       if (e.touches.length === 1) {
         const touch = e.touches[0];
         const mouseEvent = new MouseEvent('mousedown', {
@@ -70,14 +109,50 @@ export class NetworkBuilder {
           cancelable: true
         });
         this.canvas.dispatchEvent(mouseEvent);
-        // Prevent default scrolling only when construction tool is active
-        if (this.activeTool !== 'select') {
+        // Prevent default browser scrolling/gestures
+        if (this.activeTool !== 'select' || (this.canvasRenderer && this.canvasRenderer.isPanning)) {
           e.preventDefault();
         }
       }
     }, { passive: false });
 
     this.canvas.addEventListener('touchmove', (e) => {
+      if (e.touches.length === 2 && this.isPinching && this.canvasRenderer && !this.canvasRenderer.isMapMode) {
+        const dist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        
+        if (this.pinchStartDist > 5) {
+          const factor = dist / this.pinchStartDist;
+          const oldZoom = this.canvasRenderer.zoom;
+          const newZoom = oldZoom * factor;
+          
+          this.canvasRenderer.zoom = Math.max(0.5, Math.min(3.0, newZoom));
+          
+          const rect = this.canvas.getBoundingClientRect();
+          const cx = centerX - rect.left;
+          const cy = centerY - rect.top;
+          
+          this.canvasRenderer.panOffset.x = cx - (cx - this.canvasRenderer.panOffset.x) * (this.canvasRenderer.zoom / oldZoom);
+          this.canvasRenderer.panOffset.y = cy - (cy - this.canvasRenderer.panOffset.y) * (this.canvasRenderer.zoom / oldZoom);
+        }
+        
+        // Two-finger pan
+        const dx = centerX - this.pinchStartCenter.x;
+        const dy = centerY - this.pinchStartCenter.y;
+        this.canvasRenderer.panOffset.x += dx;
+        this.canvasRenderer.panOffset.y += dy;
+        
+        this.pinchStartDist = dist;
+        this.pinchStartCenter = { x: centerX, y: centerY };
+        
+        e.preventDefault();
+        return;
+      }
+      
       if (e.touches.length === 1) {
         const touch = e.touches[0];
         const mouseEvent = new MouseEvent('mousemove', {
@@ -87,13 +162,20 @@ export class NetworkBuilder {
           cancelable: true
         });
         this.canvas.dispatchEvent(mouseEvent);
-        if (this.activeTool !== 'select') {
+        if (this.activeTool !== 'select' || (this.canvasRenderer && this.canvasRenderer.isPanning)) {
           e.preventDefault();
         }
       }
     }, { passive: false });
 
     this.canvas.addEventListener('touchend', (e) => {
+      if (this.isPinching) {
+        if (e.touches.length < 2) {
+          this.isPinching = false;
+        }
+        e.preventDefault();
+        return;
+      }
       const mouseEvent = new MouseEvent('mouseup', {
         bubbles: true,
         cancelable: true
@@ -123,8 +205,18 @@ export class NetworkBuilder {
   }
 
   handleMouseDown(e) {
-    // Avoid drawing when drag panning is active (right/middle click)
+    // Avoid drawing when drag panning is active
     if (this.canvasRenderer && this.canvasRenderer.isPanning) return;
+
+    // Right-click (button 2) or Middle-click (button 1) triggers drag panning in any tool
+    if (e.button === 2 || e.button === 1) {
+      if (this.canvasRenderer) {
+        this.canvasRenderer.isPanning = true;
+        this.canvasRenderer.panStart = { x: e.clientX, y: e.clientY };
+      }
+      e.preventDefault();
+      return;
+    }
 
     const pos = this.getMousePos(e);
     const graphPos = this.getGraphCoords(pos);
@@ -143,6 +235,11 @@ export class NetworkBuilder {
         this.selectElement('road', clickedRoad);
       } else {
         this.deselect();
+        // Start dragging to pan canvas on empty space
+        if (this.canvasRenderer) {
+          this.canvasRenderer.isPanning = true;
+          this.canvasRenderer.panStart = { x: e.clientX, y: e.clientY };
+        }
       }
     } else if (this.activeTool === 'node') {
       if (clickedNode) {
@@ -194,6 +291,17 @@ export class NetworkBuilder {
   }
 
   handleMouseMove(e) {
+    if (this.canvasRenderer && this.canvasRenderer.isPanning) {
+      const dx = e.clientX - this.canvasRenderer.panStart.x;
+      const dy = e.clientY - this.canvasRenderer.panStart.y;
+      
+      this.canvasRenderer.panOffset.x += dx;
+      this.canvasRenderer.panOffset.y += dy;
+      
+      this.canvasRenderer.panStart = { x: e.clientX, y: e.clientY };
+      return;
+    }
+
     const pos = this.getMousePos(e);
     const graphPos = this.getGraphCoords(pos);
 
@@ -218,6 +326,11 @@ export class NetworkBuilder {
   }
 
   handleMouseUp(e) {
+    if (this.canvasRenderer && this.canvasRenderer.isPanning) {
+      this.canvasRenderer.isPanning = false;
+      return;
+    }
+
     if (this.isMovingNode) {
       this.isMovingNode = false;
       this.draggedNode = null;

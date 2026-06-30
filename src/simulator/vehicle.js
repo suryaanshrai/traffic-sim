@@ -95,15 +95,8 @@ export class Vehicle {
     const isSinkAhead = this.currentRoad.toNode.role === 'sink';
     const isLastRoad = this.currentRoadIndex === this.route.length - 1;
 
-    if (isSinkAhead) {
-      // Sinks swallow vehicles; no stopping needed
-    } else if (isLastRoad) {
-      // Stop at the very end of the final road
-      const sEnd = Math.max(0.1, distToJunction - 8);
-      if (sEnd < s) {
-        s = sEnd;
-        deltaV = this.v - 0;
-      }
+    if (isSinkAhead || isLastRoad) {
+      // Sinks and final destinations swallow vehicles; no stopping constraint needed
     } else {
       // Check if the next road in our route is blocked
       const nextRoadId = this.route[this.currentRoadIndex + 1];
@@ -114,8 +107,36 @@ export class Vehicle {
       const junction = this.currentRoad.toNode;
       const light = junction.trafficLight;
 
+      // Uncontrolled junction yielding logic
+      let yieldToVehicle = false;
+      if (!light && junction.incomingRoads.length >= 2) {
+        // Iterate through conflicting incoming roads to this junction
+        junction.incomingRoads.forEach(rid => {
+          if (rid !== this.currentRoad.id) {
+            const otherVehicles = engine ? engine.getRoadVehicles(rid) : [];
+            otherVehicles.forEach(other => {
+              if (other.isArrived || other.id === this.id) return;
+              const otherDist = other.currentRoad.length - other.position;
+              
+              // Yield if other vehicle is closer, within 60px, and actually moving (not stopped/deadlocked)
+              if (otherDist < 60 && otherDist < distToJunction && other.v > 1.0) {
+                // Yield to the closer vehicle to avoid overlapping in the intersection!
+                yieldToVehicle = true;
+              }
+            });
+          }
+        });
+      }
+
       if (isNextRoadBlocked) {
         // Next road is blocked: stop at the junction stop bar
+        const sLight = Math.max(0.1, distToJunction - 10);
+        if (sLight < s) {
+          s = sLight;
+          deltaV = this.v - 0;
+        }
+      } else if (yieldToVehicle) {
+        // Yield to another vehicle at uncontrolled intersection: stop at the stop line
         const sLight = Math.max(0.1, distToJunction - 10);
         if (sLight < s) {
           s = sLight;

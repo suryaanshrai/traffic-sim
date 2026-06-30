@@ -43,6 +43,10 @@ export class DashboardController {
     this.valLookback = document.getElementById('val-lookback');
     
     this.checkboxEvents = document.getElementById('checkbox-events');
+    this.checkboxAccidents = document.getElementById('checkbox-accidents');
+    this.selectSignalDeployment = document.getElementById('select-signal-deployment');
+    this.sliderSignalDensity = document.getElementById('slider-signal-density');
+    this.valSignalDensity = document.getElementById('val-signal-density');
 
     this.btnPause = document.getElementById('btn-speed-pause');
     this.btnSpeed1x = document.getElementById('btn-speed-1x');
@@ -341,6 +345,22 @@ export class DashboardController {
 
     this.checkboxEvents.addEventListener('change', () => {
       this.engine.randomEventsEnabled = this.checkboxEvents.checked;
+    });
+
+    this.checkboxAccidents.addEventListener('change', () => {
+      this.engine.accidentsEnabled = this.checkboxAccidents.checked;
+    });
+
+    this.selectSignalDeployment.addEventListener('change', () => {
+      this.engine.trafficLightDeploymentMode = this.selectSignalDeployment.value;
+      this.engine.initializeTrafficLights();
+    });
+
+    this.sliderSignalDensity.addEventListener('input', () => {
+      const val = parseFloat(this.sliderSignalDensity.value) / 100.0;
+      this.valSignalDensity.textContent = `${this.sliderSignalDensity.value}%`;
+      this.engine.trafficLightDensity = val;
+      this.engine.initializeTrafficLights();
     });
 
     // 6. Simulation Speed Buttons

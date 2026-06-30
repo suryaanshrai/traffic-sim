@@ -27,6 +27,12 @@ export class SimulationEngine {
     this.randomEventsEnabled = false;
     this.randomEventProbability = 0.08; // Chance per second of an event triggering (approx every 12.5 seconds)
     this.activeRoadblocks = new Set(); // road IDs currently blocked by random events
+    this.accidentsEnabled = false;
+    this.activeAccidents = new Map(); // vehicleId -> { roadId, timer }
+
+    // Signal deployment config
+    this.trafficLightDeploymentMode = 'density';
+    this.trafficLightDensity = 0.8;
     
     // Performance and tracking
     this.vehicleIdCounter = 0;
@@ -45,6 +51,7 @@ export class SimulationEngine {
   reset() {
     this.vehicles.clear();
     this.roadVehicles.clear();
+    this.activeAccidents.clear();
     this.arrivedVehiclesCount = 0;
     this.completedTravelTimes = [];
     this.completedWaitTimes = [];
@@ -67,15 +74,71 @@ export class SimulationEngine {
   }
 
   initializeTrafficLights() {
+    // 1. Reset all nodes to not have traffic lights first
     for (const [_, node] of this.graph.nodes) {
-      // A node is a junction if it has 2 or more incoming roads and is not a source/sink node
+      node.trafficLight = null;
+    }
+
+    // 2. Collect all candidate junctions
+    const candidates = [];
+    for (const [_, node] of this.graph.nodes) {
       if (node.incomingRoads.length >= 2 && node.role !== 'sink' && node.role !== 'source') {
-        node.trafficLight = new TrafficLight(node, this.graph);
-        node.trafficLight.algorithm = this.activeAlgorithm;
-      } else {
-        node.trafficLight = null;
+        candidates.push(node);
       }
     }
+
+    if (candidates.length === 0) return;
+
+    // 3. Sort/score candidates based on selected mode
+    if (this.trafficLightDeploymentMode === 'density') {
+      // Calculate Volume & Capacity Density: sum of lanes and capacities of all incoming roads
+      candidates.sort((a, b) => {
+        const aDensity = a.incomingRoads.reduce((sum, rid) => {
+          const road = this.graph.roads.get(rid);
+          return sum + (road ? road.lanes * 2 + (road.capacity / 10) : 0);
+        }, 0);
+        const bDensity = b.incomingRoads.reduce((sum, rid) => {
+          const road = this.graph.roads.get(rid);
+          return sum + (road ? road.lanes * 2 + (road.capacity / 10) : 0);
+        }, 0);
+        return bDensity - aDensity; // Highest density first
+      });
+    } else if (this.trafficLightDeploymentMode === 'major') {
+      // Major corridor intersections first: count of incoming roads that are major (lanes >= 2 or speed limit >= 50)
+      candidates.sort((a, b) => {
+        const aMajorCount = a.incomingRoads.filter(rid => {
+          const road = this.graph.roads.get(rid);
+          return road && (road.lanes >= 2 || road.speedLimit >= 50);
+        }).length;
+        const bMajorCount = b.incomingRoads.filter(rid => {
+          const road = this.graph.roads.get(rid);
+          return road && (road.lanes >= 2 || road.speedLimit >= 50);
+        }).length;
+
+        // Primary: major roads count, Secondary: incoming degree
+        if (bMajorCount !== aMajorCount) {
+          return bMajorCount - aMajorCount;
+        }
+        return b.incomingRoads.length - a.incomingRoads.length;
+      });
+    } else if (this.trafficLightDeploymentMode === 'random') {
+      // Shuffled random distribution (using a pseudo-random seed or Math.random)
+      // Shuffling to choose top N randomly
+      for (let i = candidates.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+      }
+    }
+
+    // 4. Select top N candidates based on trafficLightDensity (0.0 to 1.0)
+    const targetCount = Math.round(candidates.length * this.trafficLightDensity);
+    const selectedNodes = candidates.slice(0, targetCount);
+
+    // 5. Deploy traffic lights on selected junctions
+    selectedNodes.forEach(node => {
+      node.trafficLight = new TrafficLight(node, this.graph);
+      node.trafficLight.algorithm = this.activeAlgorithm;
+    });
   }
 
   setAlgorithm(algo) {
@@ -157,6 +220,11 @@ export class SimulationEngine {
     // 4. Random Events Handler (Only run on the active engine to prevent state override conflict)
     if (this.randomEventsEnabled && !this.isBackground) {
       this.handleRandomEvents(dt);
+    }
+
+    // 4.1 Accidents Handler (Only run on the active engine to prevent state desync)
+    if (this.accidentsEnabled && !this.isBackground) {
+      this.handleAccidents(dt);
     }
 
     // 5. Metrics Recording (Every 1s of simulation time)
@@ -327,6 +395,113 @@ export class SimulationEngine {
         }
       }
     }
+  }
+
+  handleAccidents(dt) {
+    // 1. Tick down and clear existing accidents
+    for (const [vehicleId, data] of this.activeAccidents.entries()) {
+      data.duration -= dt;
+      if (data.duration <= 0) {
+        this.clearAccident(vehicleId);
+      }
+    }
+
+    // 2. Roll for new accidents (0.015 - approx 1.5% chance per second of a breakdown happening in the network)
+    if (this.vehicles.size > 0 && Math.random() < 0.015 * dt) {
+      this.triggerAccident();
+    }
+  }
+
+  triggerAccident() {
+    // Collect active, non-broken-down vehicles
+    const candidates = Array.from(this.vehicles.values()).filter(v => !v.isArrived && !v.isBrokenDown && v.currentRoad);
+    if (candidates.length === 0) return;
+
+    // Pick one random vehicle
+    const vehicle = candidates[Math.floor(Math.random() * candidates.length)];
+    const road = vehicle.currentRoad;
+
+    vehicle.isBrokenDown = true;
+    vehicle.v = 0;
+    vehicle.accel = 0;
+
+    road.isBlocked = true;
+    road.speedFactor = 0.0;
+
+    const duration = 15 + Math.random() * 10; // 15 to 25 seconds
+    this.activeAccidents.set(vehicle.id, { roadId: road.id, duration });
+
+    console.log(`Accident Triggered! Vehicle ${vehicle.id} broke down on Road ${road.id}`);
+
+    // Dynamic rerouting
+    this.rerouteVehiclesAvoiding(road.id);
+
+    if (this.onAccidentTriggered) {
+      this.onAccidentTriggered(vehicle.id, road.id, duration);
+    }
+  }
+
+  clearAccident(vehicleId) {
+    const data = this.activeAccidents.get(vehicleId);
+    if (!data) return;
+
+    const road = this.graph.roads.get(data.roadId);
+    if (road) {
+      // Restore road flow!
+      road.isBlocked = false;
+      road.speedFactor = 1.0;
+    }
+
+    // Remove the vehicle that caused the accident (tow it away)
+    const vehicle = this.vehicles.get(vehicleId);
+    if (vehicle) {
+      vehicle.arrive(); // Mark as arrived so it gets cleaned up
+    }
+
+    this.activeAccidents.delete(vehicleId);
+    console.log(`Accident Cleared! Vehicle ${vehicleId} towed. Road ${data.roadId} reopened.`);
+
+    if (this.onAccidentCleared) {
+      this.onAccidentCleared(vehicleId);
+    }
+  }
+
+  syncAccident(vehicleId, roadId, duration) {
+    const vehicle = this.vehicles.get(vehicleId);
+    const road = this.graph.roads.get(roadId);
+
+    if (vehicle) {
+      vehicle.isBrokenDown = true;
+      vehicle.v = 0;
+      vehicle.accel = 0;
+    }
+
+    if (road) {
+      road.isBlocked = true;
+      road.speedFactor = 0.0;
+    }
+
+    this.activeAccidents.set(vehicleId, { roadId, duration });
+    this.rerouteVehiclesAvoiding(roadId);
+  }
+
+  syncClearAccident(vehicleId) {
+    const vehicle = this.vehicles.get(vehicleId);
+    if (vehicle) {
+      vehicle.isBrokenDown = false;
+      vehicle.arrive();
+    }
+
+    const data = this.activeAccidents.get(vehicleId);
+    if (data) {
+      const road = this.graph.roads.get(data.roadId);
+      if (road) {
+        road.isBlocked = false;
+        road.speedFactor = 1.0;
+      }
+    }
+
+    this.activeAccidents.delete(vehicleId);
   }
 
   getMetrics() {

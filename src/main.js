@@ -64,6 +64,26 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
     };
+
+    engines[algo].onAccidentTriggered = (vehicleId, roadId, duration) => {
+      if (algo === activeAlgo) {
+        for (const otherAlgo in engines) {
+          if (otherAlgo !== algo) {
+            engines[otherAlgo].syncAccident(vehicleId, roadId, duration);
+          }
+        }
+      }
+    };
+
+    engines[algo].onAccidentCleared = (vehicleId) => {
+      if (algo === activeAlgo) {
+        for (const otherAlgo in engines) {
+          if (otherAlgo !== algo) {
+            engines[otherAlgo].syncClearAccident(vehicleId);
+          }
+        }
+      }
+    };
   }
 
   // Cache viewport DOM elements
@@ -236,6 +256,33 @@ document.addEventListener('DOMContentLoaded', () => {
     const checked = e.target.checked;
     for (const algo in engines) {
       engines[algo].randomEventsEnabled = checked;
+    }
+  });
+
+  document.getElementById('checkbox-accidents').addEventListener('change', (e) => {
+    const checked = e.target.checked;
+    for (const algo in engines) {
+      engines[algo].accidentsEnabled = checked;
+    }
+  });
+
+  document.getElementById('select-signal-deployment').addEventListener('change', (e) => {
+    const mode = e.target.value;
+    for (const algo in engines) {
+      engines[algo].trafficLightDeploymentMode = mode;
+      engines[algo].initializeTrafficLights();
+    }
+  });
+
+  document.getElementById('slider-signal-density').addEventListener('input', (e) => {
+    const val = parseFloat(e.target.value) / 100.0;
+    const valSpan = document.getElementById('val-signal-density');
+    if (valSpan) {
+      valSpan.textContent = `${e.target.value}%`;
+    }
+    for (const algo in engines) {
+      engines[algo].trafficLightDensity = val;
+      engines[algo].initializeTrafficLights();
     }
   });
 
