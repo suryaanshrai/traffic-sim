@@ -818,14 +818,15 @@ select:focus {
     justify-content: center;
     width: auto;
     max-width: 90%;
+    overflow: hidden;
   }
 
   .nav-tab {
     background: transparent;
-    border: 1px solid transparent;
+    border: none;
     color: #94a3b8;
     padding: 8px 16px;
-    border-radius: 20px;
+    border-radius: 24px;
     cursor: pointer;
     font-family: var(--font-header);
     font-size: 0.8rem;
@@ -835,14 +836,20 @@ select:focus {
     gap: 8px;
     transition: all 0.3s ease;
     white-space: nowrap;
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .nav-tab:focus-visible {
+    outline: 2px solid var(--neon-cyan);
+    outline-offset: 2px;
   }
 
   .nav-tab.active {
     background: rgba(0, 242, 254, 0.15);
     color: var(--neon-cyan);
-    border-color: transparent;
     text-shadow: 0 0 5px rgba(0, 242, 254, 0.5);
-    box-shadow: inset 0 0 8px rgba(0, 242, 254, 0.1), 0 0 0 1px var(--border-neon);
+    box-shadow: inset 0 0 10px rgba(0, 242, 254, 0.15);
   }
 
   .nav-tab svg {
