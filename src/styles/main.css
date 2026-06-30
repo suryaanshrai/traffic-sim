@@ -35,7 +35,9 @@ body {
   font-family: var(--font-body);
   overflow: hidden;
   height: 100vh;
+  height: 100dvh;
   width: 100vw;
+  width: 100dvw;
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -53,7 +55,9 @@ h1, h2, h3, h4, h5, h6 {
     "sidebar viewport"
     "dashboard dashboard";
   height: 100vh;
+  height: 100dvh;
   width: 100vw;
+  width: 100dvw;
   position: relative;
   background-image: radial-gradient(circle at 50% 50%, #0f0c20 0%, var(--bg-dark) 80%);
 }
@@ -704,7 +708,9 @@ select:focus {
   #app-container {
     display: block;
     width: 100vw;
+    width: 100dvw;
     height: 100vh;
+    height: 100dvh;
     position: relative;
     overflow: hidden;
   }
@@ -715,7 +721,9 @@ select:focus {
     top: 0;
     left: 0;
     width: 100vw;
+    width: 100dvw;
     height: 100vh;
+    height: 100dvh;
     z-index: 1;
   }
 
@@ -849,7 +857,9 @@ select:focus {
     top: 0;
     left: 0;
     width: 100vw;
+    width: 100dvw;
     height: 100vh;
+    height: 100dvh;
     z-index: 80;
     background: rgba(5, 5, 8, 0.6);
     backdrop-filter: blur(4px);
