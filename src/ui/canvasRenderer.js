@@ -40,8 +40,13 @@ export class CanvasRenderer {
   }
 
   resize(width, height) {
-    this.canvas.width = width;
-    this.canvas.height = height;
+    this.width = width;
+    this.height = height;
+    const dpr = window.devicePixelRatio || 1;
+    this.canvas.width = width * dpr;
+    this.canvas.height = height * dpr;
+    this.canvas.style.width = width + 'px';
+    this.canvas.style.height = height + 'px';
   }
 
   setMapMode(active) {
@@ -50,18 +55,26 @@ export class CanvasRenderer {
 
   draw() {
     const ctx = this.ctx;
-    const w = this.canvas.width;
-    const h = this.canvas.height;
+    const w = this.width || this.canvas.width;
+    const h = this.height || this.canvas.height;
+    const dpr = window.devicePixelRatio || 1;
+
+    // Reset transform to clear entire buffer in physical pixels
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
 
     // 1. Clear Canvas
     if (this.isMapMode) {
       // Map mode needs full transparency so OSM tiles show behind it
-      ctx.clearRect(0, 0, w, h);
+      ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     } else {
       // Grid Builder mode gets dark background
       ctx.fillStyle = '#050508';
-      ctx.fillRect(0, 0, w, h);
+      ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     }
+
+    // Apply scale for all drawings to use logical CSS dimensions
+    ctx.save();
+    ctx.scale(dpr, dpr);
 
     // 2. Draw Hover Glow (antigravity.google magnetic ripple)
     if (!this.isMapMode && this.isMouseOver && !this.isPanning) {
@@ -92,6 +105,8 @@ export class CanvasRenderer {
 
     // 7. Draw System Command HUD
     this.drawHUD(ctx, w, h);
+
+    ctx.restore();
   }
 
   drawDigitalGrid(ctx, w, h) {
