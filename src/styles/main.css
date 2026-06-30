@@ -809,22 +809,25 @@ select:focus {
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     border: 1px solid var(--border-neon);
-    border-radius: 30px;
-    padding: 6px 14px;
-    gap: 6px;
+    border-radius: 24px;
+    padding: 4px;
+    gap: 4px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 15px rgba(0, 242, 254, 0.15);
     display: flex;
     align-items: center;
-    justify-content: center;
-    width: auto;
-    max-width: 90%;
+    justify-content: space-between;
+    width: 92%;
+    max-width: 380px;
+    height: 48px;
+    box-sizing: border-box;
   }
 
   .nav-tab {
     background: transparent;
     border: 1px solid transparent;
     color: #94a3b8;
-    padding: 8px 16px;
+    height: 100%;
+    flex: 1;
     border-radius: 20px;
     cursor: pointer;
     font-family: var(--font-header);
@@ -832,11 +835,13 @@ select:focus {
     font-weight: 500;
     display: flex;
     align-items: center;
-    gap: 8px;
+    justify-content: center;
+    gap: 6px;
     transition: all 0.3s ease;
     white-space: nowrap;
     outline: none;
     -webkit-tap-highlight-color: transparent;
+    box-sizing: border-box;
   }
 
   .nav-tab:focus-visible {
