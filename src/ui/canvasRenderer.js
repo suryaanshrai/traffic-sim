@@ -172,8 +172,10 @@ export class CanvasRenderer {
                          this.builder.selectedElement.obj.id === id;
 
       // Check if road is One-Way
-      const revId = `road_${road.toNode.id}_${road.fromNode.id}`;
-      const isOneWay = !this.graph.roads.has(revId);
+      const isOneWay = !road.toNode.outgoingRoads.some(outRoadId => {
+        const outRoad = this.graph.roads.get(outRoadId);
+        return outRoad && outRoad.toNode.id === road.fromNode.id;
+      });
 
       // Normal vector for directional lane shifting (visual separation of opposite directions)
       const dx = to.x - from.x;
@@ -441,8 +443,10 @@ export class CanvasRenderer {
 
       // Lane width approx 6px. Shift center
       const laneWidth = 6;
-      const revId = `road_${road.toNode.id}_${road.fromNode.id}`;
-      const isOneWay = !this.graph.roads.has(revId);
+      const isOneWay = !road.toNode.outgoingRoads.some(outRoadId => {
+        const outRoad = this.graph.roads.get(outRoadId);
+        return outRoad && outRoad.toNode.id === road.fromNode.id;
+      });
       const roadOffset = (!isOneWay) ? 3.0 : 0;
       const offset = (vehicle.lane - (road.lanes - 1) / 2) * laneWidth + roadOffset;
 

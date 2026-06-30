@@ -387,17 +387,21 @@ export class DashboardController {
       if (this.builder.selectedElement && this.builder.selectedElement.type === 'road') {
         const road = this.builder.selectedElement.obj;
         const isBidi = this.propBidirectional.checked;
-        const revId = `road_${road.toNode.id}_${road.fromNode.id}`;
+        const reverseRoad = Array.from(this.graph.roads.values()).find(
+          r => r.fromNode.id === road.toNode.id && r.toNode.id === road.fromNode.id
+        );
         
         if (isBidi) {
           // Add reverse road if missing
-          if (!this.graph.roads.has(revId)) {
+          if (!reverseRoad) {
+            const revId = `road_${road.toNode.id}_${road.fromNode.id}`;
             this.graph.addRoad(revId, road.toNode.id, road.fromNode.id, road.lanes, road.speedLimit);
             this.builder.notifyGraphChanged();
           }
         } else {
           // Delete reverse road if present
-          if (this.graph.roads.has(revId)) {
+          if (reverseRoad) {
+            const revId = reverseRoad.id;
             if (this.onRoadRemoved) {
               this.onRoadRemoved(revId);
             }
@@ -469,8 +473,10 @@ export class DashboardController {
       }
 
       // Bidirectional check
-      const revId = `road_${element.toNode.id}_${element.fromNode.id}`;
-      this.propBidirectional.checked = this.graph.roads.has(revId);
+      const hasReverseRoad = Array.from(this.graph.roads.values()).some(
+        r => r.fromNode.id === element.toNode.id && r.toNode.id === element.fromNode.id
+      );
+      this.propBidirectional.checked = hasReverseRoad;
     } else if (type === 'node') {
       this.propNodeRole.value = element.role;
       if (element.trafficLight && element.trafficLight.phases.length > 0) {
