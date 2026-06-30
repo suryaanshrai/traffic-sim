@@ -818,6 +818,7 @@ select:focus {
     justify-content: center;
     width: auto;
     max-width: 90%;
+    overflow: hidden;
   }
 
   .nav-tab {
